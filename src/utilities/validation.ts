@@ -1,0 +1,90 @@
+import { PasswordStrength } from '@/interfaces/auth';
+
+export const validatePasswordStrength = (password: string): PasswordStrength => {
+  const feedback: string[] = [];
+  let score = 0;
+
+  if (password.length >= 8) {
+    score++;
+  } else {
+    feedback.push('At least 8 characters');
+  }
+
+  if (password.length <= 16) {
+    score++;
+  } else {
+    feedback.push('At most 16 characters');
+  }
+
+  if (/[a-z]/.test(password)) {
+    score++;
+  } else {
+    feedback.push('One lowercase letter');
+  }
+
+  if (/[A-Z]/.test(password)) {
+    score++;
+  } else {
+    feedback.push('One uppercase letter');
+  }
+
+  if (/\d/.test(password)) {
+    score++;
+  } else {
+    feedback.push('One number');
+  }
+
+  if (/[@$!%*?&#]/.test(password)) {
+    score++;
+  } else {
+    feedback.push('One special character (@$!%*?&#)');
+  }
+
+  const isValid = score >= 6 && password.length >= 8 && password.length <= 16;
+
+  return {
+    score: Math.min(score, 4),
+    feedback,
+    isValid,
+  };
+};
+
+export const sanitizeInput = (input: string): string => {
+  return input
+    .replace(/[<>]/g, '')
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+=/gi, '')
+    .trim();
+};
+
+export const validateEmail = (email: string): boolean => {
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  return emailRegex.test(email);
+};
+
+export const validateName = (name: string): boolean => {
+  const nameRegex = /^[a-zA-Z\s'-]{2,50}$/;
+  return nameRegex.test(name);
+};
+
+export const preventPasswordPaste = (e: React.ClipboardEvent<HTMLInputElement>): void => {
+  e.preventDefault();
+};
+
+export const preventPasswordContextMenu = (e: React.MouseEvent<HTMLInputElement>): void => {
+  e.preventDefault();
+};
+
+export const formatOTPInput = (value: string): string => {
+  return value.replace(/\D/g, '').substring(0, 6);
+};
+
+export const trimInput = (value: string): string => {
+  return value.trim();
+};
+
+export const validatePasswordNoLeadingSpaces = (password: string | undefined): boolean => {
+  if (!password) return true;
+  return password.length === 0 || password[0] !== ' ';
+};
+
