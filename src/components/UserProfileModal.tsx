@@ -5,7 +5,7 @@ import { useAuthStore } from '@/store/authStore';
 import api from '@/services/api';
 import { API_ENDPOINTS, BACKEND_BASE_URL } from '@/constants';
 import { User } from '@/interfaces/shared';
-import { connectSocket, disconnectSocket, getSocket } from '@/utils/socketClient';
+import { connectSocket, disconnectSocket, getSocket } from '@/utilities/socketClient';
 import { Socket } from 'socket.io-client';
 
 interface UserProfileModalProps {

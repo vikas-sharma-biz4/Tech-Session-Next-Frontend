@@ -6,9 +6,10 @@ export interface IUsePaginationParams<TParams> {
   limit?: number;
   apiParams?: Partial<TParams>;
   initialPage?: number;
+  infiniteScroll?: boolean; // Enable infinite scroll mode
 }
 
-export interface IUsePaginationReturn<TData> {
+export interface IUsePaginationReturn<TParams, TData> {
   data: TData[];
   currentPage: number;
   totalPages: number;
@@ -18,6 +19,7 @@ export interface IUsePaginationReturn<TData> {
   apiResponse: AxiosResponse | undefined;
   setData: React.Dispatch<React.SetStateAction<TData[]>>;
   fetchData: (page?: number, otherParams?: Partial<TParams>) => Promise<void>;
+  loadMore: () => Promise<void>; // Load next page (for infinite scroll)
   setLoading: React.Dispatch<React.SetStateAction<boolean>>;
   goToPage: (page: number) => void;
   reset: () => void;
@@ -25,12 +27,13 @@ export interface IUsePaginationReturn<TData> {
 
 const DEFAULT_LIMIT = 20;
 
-const usePagination = <TParams extends { page?: number; limit?: number }, TData>({
+const usePagination = <TParams extends { page?: number; limit?: number }, TData extends { id?: string | number }>({
   apiService,
   limit = DEFAULT_LIMIT,
   apiParams,
   initialPage = 1,
-}: IUsePaginationParams<TParams>): IUsePaginationReturn<TData> => {
+  infiniteScroll = false,
+}: IUsePaginationParams<TParams>): IUsePaginationReturn<TParams, TData> => {
   const [data, setData] = useState<TData[]>([]);
   const [currentPage, setCurrentPage] = useState<number>(initialPage);
   const [totalPages, setTotalPages] = useState<number>(1);
@@ -45,6 +48,13 @@ const usePagination = <TParams extends { page?: number; limit?: number }, TData>
   const fetchData = useCallback(
     async (page?: number, otherParams?: Partial<TParams>) => {
       const targetPage = page !== undefined ? page : currentPage;
+      const isFirstPage = targetPage === 1 || targetPage === initialPage;
+      
+      // Prevent duplicate requests if already loading the same page
+      if (loading && targetPage === currentPage) {
+        return;
+      }
+      
       setLoading(true);
 
       try {
@@ -96,14 +106,28 @@ const usePagination = <TParams extends { page?: number; limit?: number }, TData>
           }
 
           if (items) {
-            setData(items);
+            // For infinite scroll: append new items if loading next page, replace if first page
+            if (infiniteScroll && !isFirstPage) {
+              // Infinite scroll mode: append data for subsequent pages (page 2+)
+              setData((prevData) => {
+                // Prevent duplicates by checking if items already exist
+                const existingIds = new Set(prevData.map((item: TData) => item.id).filter((id): id is string | number => id !== undefined));
+                const newItems = items.filter((item: TData) => item.id === undefined || !existingIds.has(item.id));
+                return [...prevData, ...newItems];
+              });
+            } else {
+              // First page or non-infinite scroll: replace data
+              setData(items);
+            }
             setTotal(totalCount);
             setTotalPages(totalPagesCount);
             setCurrentPage(pageNum);
             setHasMore(pageNum < totalPagesCount);
           } else {
             setHasMore(false);
-            setData([]);
+            if (isFirstPage) {
+              setData([]);
+            }
           }
         } else {
           setHasMore(false);
@@ -112,12 +136,14 @@ const usePagination = <TParams extends { page?: number; limit?: number }, TData>
       } catch (error) {
         console.error('Error fetching data:', error);
         setHasMore(false);
-        setData([]);
+        if (targetPage === 1 || targetPage === initialPage) {
+          setData([]);
+        }
       } finally {
         setLoading(false);
       }
     },
-    [currentPage, limit, apiParams, apiService]
+    [currentPage, limit, apiParams, apiService, infiniteScroll, initialPage, loading]
   );
 
   /**
@@ -131,6 +157,16 @@ const usePagination = <TParams extends { page?: number; limit?: number }, TData>
     },
     [totalPages, currentPage, fetchData]
   );
+
+  /**
+   * Load more data (for infinite scroll)
+   */
+  const loadMore = useCallback(async () => {
+    if (hasMore && !loading && currentPage < totalPages) {
+      const nextPage = currentPage + 1;
+      await fetchData(nextPage);
+    }
+  }, [hasMore, loading, currentPage, totalPages, fetchData]);
 
   /**
    * Reset pagination to initial state
@@ -161,6 +197,7 @@ const usePagination = <TParams extends { page?: number; limit?: number }, TData>
     apiResponse,
     setData,
     fetchData,
+    loadMore,
     setLoading,
     goToPage,
     reset,

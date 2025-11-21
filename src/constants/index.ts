@@ -3,11 +3,11 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost
 export const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
 
 export const ROUTES = {
-  LOGIN: '/login',
-  SIGNUP: '/signup',
-  FORGOT_PASSWORD: '/forgot-password',
+  LOGIN: '/auth/login',
+  SIGNUP: '/auth/signup',
+  FORGOT_PASSWORD: '/auth/forgot-password',
   DASHBOARD: '/dashboard',
-  OAUTH_CALLBACK: '/oauth-callback',
+  OAUTH_CALLBACK: '/auth/oauth-callback',
 } as const;
 
 export const API_ENDPOINTS = {

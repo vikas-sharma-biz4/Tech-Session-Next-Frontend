@@ -8,7 +8,7 @@ import { ROUTES } from '@/constants';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import RoleSelectionModal from '@/components/RoleSelectionModal';
 
-export default function OAuthCallbackPage() {
+export default function OAuthCallbackView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [showRoleSelection, setShowRoleSelection] = useState(false);

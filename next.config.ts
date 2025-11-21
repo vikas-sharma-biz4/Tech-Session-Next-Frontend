@@ -16,6 +16,11 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Optimize production builds
+  compress: true, // Enable gzip compression
+  poweredByHeader: false, // Remove X-Powered-By header
+  // Reduce bundle size in production
+  swcMinify: true, // Use SWC minification (faster than Terser)
 };
 
 export default nextConfig;

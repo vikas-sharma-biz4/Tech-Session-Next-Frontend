@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { API_BASE_URL, TOKEN_COOKIE_NAME } from '@/constants';
+import { AuthResponse, ApiResponse } from '@/interfaces/shared';
 
 export async function GET(
   request: NextRequest,
@@ -119,11 +120,11 @@ async function handleRequest(
     }
 
     // Get response data (skip for redirects)
-    let data: any = {};
+    let data: AuthResponse | ApiResponse<unknown> | Record<string, unknown> = {};
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {
       try {
-        data = await response.json();
+        data = await response.json() as AuthResponse | ApiResponse<unknown> | Record<string, unknown>;
       } catch {
         data = {};
       }
@@ -132,7 +133,12 @@ async function handleRequest(
     const nextResponse = NextResponse.json(data, { status });
     
     // Set token in httpOnly cookie for login/signup responses
-    if ((pathString === 'login' || pathString === 'verify-signup-otp') && data.token) {
+    // Type guard to check if data is AuthResponse
+    const isAuthResponse = (response: AuthResponse | ApiResponse<unknown> | Record<string, unknown>): response is AuthResponse => {
+      return 'token' in response && typeof (response as AuthResponse).token === 'string';
+    };
+    
+    if ((pathString === 'login' || pathString === 'verify-signup-otp') && isAuthResponse(data)) {
       nextResponse.cookies.set(TOKEN_COOKIE_NAME, data.token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',

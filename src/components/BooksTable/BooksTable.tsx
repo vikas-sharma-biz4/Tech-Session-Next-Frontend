@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import api from '@/services/api';
 import { Book, BooksResponse } from '@/interfaces/books';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -52,10 +52,27 @@ export default function BooksTable() {
   const [maxPrice, setMaxPrice] = useState<string>('');
   const [sortBy, setSortBy] = useState<string>('created_at');
   const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearchInput, setDebouncedSearchInput] = useState('');
+
+  // Debounce search input to prevent excessive API calls - wait until user stops typing
+  useEffect(() => {
+    // If search input is empty, update immediately (for clearing search)
+    if (searchInput.trim() === '') {
+      setDebouncedSearchInput('');
+      return;
+    }
+
+    // Otherwise, wait 800ms after user stops typing before updating
+    const timer = setTimeout(() => {
+      setDebouncedSearchInput(searchInput.trim());
+    }, 800); // 800ms debounce delay - waits until user stops typing
+
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   // Build API service function
-  const apiService = useMemo(
-    () => async (params: BookFilters) => {
+  const apiService = useCallback(
+    async (params: BookFilters) => {
       const queryParams = new URLSearchParams();
       
       if (params.page) {
@@ -98,7 +115,7 @@ export default function BooksTable() {
     const params: Partial<BookFilters> = {
       type: typeFilter,
       condition: conditionFilter,
-      search: searchInput,
+      search: debouncedSearchInput || undefined, // Use debounced search input (already trimmed in debounce effect)
     };
 
     if (minPrice) {
@@ -123,25 +140,109 @@ export default function BooksTable() {
     }
 
     return params;
-  }, [typeFilter, conditionFilter, minPrice, maxPrice, sortBy, searchInput]);
+  }, [typeFilter, conditionFilter, minPrice, maxPrice, sortBy, debouncedSearchInput]);
 
-  // Use pagination hook - fetch all data on one page
+  // Use pagination hook with infinite scroll
   const {
     data: books,
     total,
     loading,
+    hasMore,
     fetchData,
+    loadMore,
+    reset,
   } = usePagination<BookFilters, Book>({
     apiService,
-    limit: 1000, // Large limit to get all data
+    limit: 20, // Fetch 20 items per chunk
     apiParams,
     initialPage: 1,
+    infiniteScroll: true, // Enable infinite scroll mode
   });
 
-  // Fetch books when filters change
+  // Track if we're currently loading to prevent duplicate requests
+  const isLoadingRef = useRef(false);
+  const hasMoreRef = useRef(hasMore);
+  const loadingRef = useRef(loading);
+  const loadMoreRef = useRef(loadMore);
+
+  // Update refs when values change
   useEffect(() => {
-    fetchData(1); // Always fetch page 1 when filters change
-  }, [typeFilter, conditionFilter, minPrice, maxPrice, sortBy, searchInput, fetchData]);
+    hasMoreRef.current = hasMore;
+    loadingRef.current = loading;
+    loadMoreRef.current = loadMore;
+  }, [hasMore, loading, loadMore]);
+
+  // Track previous filter values to prevent unnecessary API calls
+  const prevFiltersRef = useRef<string>('');
+  
+  // Reset and fetch books when filters change (use debounced search)
+  useEffect(() => {
+    // Create a string representation of current filters
+    const currentFilters = JSON.stringify({
+      typeFilter,
+      conditionFilter,
+      minPrice,
+      maxPrice,
+      sortBy,
+      debouncedSearchInput,
+    });
+    
+    // Only fetch if filters actually changed
+    if (prevFiltersRef.current !== currentFilters) {
+      prevFiltersRef.current = currentFilters;
+      reset(); // Reset pagination state
+      fetchData(1); // Always fetch page 1 when filters change
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter, conditionFilter, minPrice, maxPrice, sortBy, debouncedSearchInput]);
+
+  // Infinite scroll: detect when user scrolls near bottom
+  useEffect(() => {
+    let ticking = false;
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          ticking = false;
+          
+          // Check if user is near bottom of page (within 300px)
+          const scrollPosition = window.innerHeight + window.scrollY;
+          const documentHeight = document.documentElement.scrollHeight;
+          
+          // Use refs to get latest values without causing re-renders
+          if (
+            scrollPosition >= documentHeight - 300 &&
+            hasMoreRef.current &&
+            !loadingRef.current &&
+            !isLoadingRef.current
+          ) {
+            isLoadingRef.current = true;
+            loadMoreRef.current().finally(() => {
+              isLoadingRef.current = false;
+            });
+          }
+        });
+        ticking = true;
+      }
+    };
+
+    // Throttled scroll handler (100ms throttle)
+    const throttledScroll = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      timeoutId = setTimeout(handleScroll, 100);
+    };
+
+    window.addEventListener('scroll', throttledScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', throttledScroll);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, []); // Empty deps - use refs instead
 
   const handleTypeChange = (type: string) => {
     setTypeFilter(type);
@@ -165,7 +266,13 @@ export default function BooksTable() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    // Trigger fetch by updating searchInput state (already handled in useEffect)
+    // Trim search input
+    const trimmedSearch = searchInput.trim();
+    if (trimmedSearch !== searchInput) {
+      setSearchInput(trimmedSearch);
+    }
+    // The debounced value will trigger the API call automatically
+    // No need to manually trigger fetch here
   };
 
   const handleClearFilters = () => {
@@ -412,7 +519,17 @@ export default function BooksTable() {
                   id="search"
                   type="text"
                   value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
+                  onChange={(e) => {
+                    // Allow typing freely, trim will happen on blur/submit
+                    setSearchInput(e.target.value);
+                  }}
+                  onBlur={(e) => {
+                    // Auto-trim leading and trailing spaces when user leaves the input
+                    const trimmed = e.target.value.trim();
+                    if (trimmed !== e.target.value) {
+                      setSearchInput(trimmed);
+                    }
+                  }}
                   placeholder="Search by title, author, ISBN..."
                   className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${
                     searchInput ? 'border-blue-300 bg-blue-50' : 'border-gray-300 bg-white'
@@ -509,15 +626,39 @@ export default function BooksTable() {
           </table>
         </div>
 
-        {/* Results Count */}
-        {!loading && books.length > 0 && (
+        {/* Results Count and Loading More Indicator */}
+        {books.length > 0 && (
           <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
             <div className="flex-1">
               <p className="text-sm text-gray-700">
                 Showing <span className="font-medium">{books.length}</span> of{' '}
                 <span className="font-medium">{total}</span> results
+                {hasMore && (
+                  <span className="ml-2 text-xs text-gray-500">
+                    (Scroll down to load more)
+                  </span>
+                )}
               </p>
             </div>
+          </div>
+        )}
+
+        {/* Loading More Indicator */}
+        {loading && books.length > 0 && (
+          <div className="bg-white px-4 py-4 flex items-center justify-center border-t border-gray-200">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+              <span>Loading more books...</span>
+            </div>
+          </div>
+        )}
+
+        {/* End of Results */}
+        {!hasMore && books.length > 0 && (
+          <div className="bg-gray-50 px-4 py-3 text-center border-t border-gray-200">
+            <p className="text-sm text-gray-500">
+              You've reached the end of the results
+            </p>
           </div>
         )}
       </div>
